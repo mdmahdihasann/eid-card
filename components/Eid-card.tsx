@@ -43,147 +43,147 @@ export default function EidCard() {
     fileInputRef.current?.click();
   };
 
-   const handleDownload = async () => {
-    try {
-      setIsProcessing(true);
-      setProgress(0);
+  const handleDownload = async () => {
+  try {
+    setIsProcessing(true);
+    setProgress(0);
 
+    const response = await fetch("/images/Eid-card.gif");
+    const buffer = await response.arrayBuffer();
 
-      const response = await fetch("/images/Eid-card.gif");
-      const buffer = await response.arrayBuffer();
+    const gifuct = await import("gifuct-js");
+    const parsedGif = gifuct.parseGIF(buffer);
+    const frames = gifuct.decompressFrames(parsedGif, true);
 
-      const gifuct = await import("gifuct-js");
-      const parsedGif = gifuct.parseGIF(buffer);
-      const rawFrames = gifuct.decompressFrames(parsedGif, true);
+    const width = parsedGif.lsd.width;
+    const height = parsedGif.lsd.height;
 
-      const width = parsedGif.lsd.width * 0.7;
-      const height = parsedGif.lsd.height * 0.7;
+    const GIF = (await import("gif.js")).default;
 
-      const GIF = (await import("gif.js")).default;
+    const gif = new GIF({
+      workers: Math.max(8, navigator.hardwareConcurrency || 4),
+      quality: 2, 
+      width,
+      height,
+      workerScript: "/gif.worker.js",
+      dither: false,
+    });
 
-      const gif = new GIF({
-        workers: 2,
-        quality: 25,
-        width,
-        height,
-        workerScript: "/gif.worker.js",
-      });
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
 
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
+    const offCanvas = document.createElement("canvas");
+    offCanvas.width = width;
+    offCanvas.height = height;
 
-      const offCanvas = document.createElement("canvas");
-      offCanvas.width = parsedGif.lsd.width;
-      offCanvas.height = parsedGif.lsd.height;
+    const offCtx = offCanvas.getContext("2d");
+    if (!offCtx) return;
 
-      const offCtx = offCanvas.getContext("2d");
-      if (!offCtx) return;
+    // ✅ preload image ONCE (important speed boost)
+    const uploadedImage = userPhoto
+      ? await new Promise<HTMLImageElement>((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.src = userPhoto;
+        })
+      : null;
 
-      const uploadedImage = userPhoto
-        ? await new Promise<HTMLImageElement>((resolve) => {
-            const img = new Image();
-            img.onload = () => resolve(img);
-            img.src = userPhoto;
-          })
-        : null;
+    // ✅ pre-calc constant values (speed boost)
+    const baseSize = width * 0.28;
+    const radius = 16;
 
-      for (let i = 0; i < rawFrames.length; i++) {
-        const f = rawFrames[i];
+    const centerX = width * 0.5;
+    const centerY = height * 0.666;
 
-        const imageData = new ImageData(
-          new Uint8ClampedArray(f.patch),
-          f.dims.width,
-          f.dims.height
-        );
+    const xBase = centerX - baseSize / 2;
+    const yBase = centerY - baseSize / 2;
 
-        const patchCanvas = document.createElement("canvas");
-        patchCanvas.width = f.dims.width;
-        patchCanvas.height = f.dims.height;
+    for (let i = 0; i < frames.length; i++) {
+      const f = frames[i];
 
-        const pctx = patchCanvas.getContext("2d");
-        if (!pctx) continue;
+      const imageData = new ImageData(
+        new Uint8ClampedArray(f.patch),
+        f.dims.width,
+        f.dims.height
+      );
 
-        pctx.putImageData(imageData, 0, 0);
-        offCtx.drawImage(patchCanvas, f.dims.left, f.dims.top);
+      const patchCanvas = document.createElement("canvas");
+      patchCanvas.width = f.dims.width;
+      patchCanvas.height = f.dims.height;
 
-        ctx.clearRect(0, 0, width, height);
-        ctx.drawImage(offCanvas, 0, 0, width, height);
+      const pctx = patchCanvas.getContext("2d");
+      if (!pctx) continue;
 
-        if (uploadedImage) {
-          const size = width * 0.28;
-          const radius = 16;
+      pctx.putImageData(imageData, 0, 0);
 
-          const x = width * 0.5 - size / 2 + position.x;
-          const y = height * 0.666 - size / 2 + position.y;
+      offCtx.drawImage(patchCanvas, f.dims.left, f.dims.top);
 
-          ctx.save();
-          ctx.beginPath();
-          ctx.moveTo(x + radius, y);
-          ctx.lineTo(x + size - radius, y);
-          ctx.quadraticCurveTo(x + size, y, x + size, y + radius);
-          ctx.lineTo(x + size, y + size - radius);
-          ctx.quadraticCurveTo(x + size, y + size, x + size - radius, y + size);
-          ctx.lineTo(x + radius, y + size);
-          ctx.quadraticCurveTo(x, y + size, x, y + size - radius);
-          ctx.lineTo(x, y + radius);
-          ctx.quadraticCurveTo(x, y, x + radius, y);
-          ctx.closePath();
-          ctx.clip();
+      // ⚡ no full clear (faster)
+      ctx.globalCompositeOperation = "source-over";
+      ctx.drawImage(offCanvas, 0, 0, width, height);
 
-          ctx.drawImage(uploadedImage, x, y, size, size);
-          ctx.restore();
-        }
+      if (uploadedImage) {
+        const x = xBase + position.x;
+        const y = yBase + position.y;
 
-        if (text) {
-          const fontSize =
-            text.length > 24
-              ? Math.max(10, (width * 0.04 * 24) / text.length)
-              : width * 0.04;
-
-          ctx.font = `${fontSize}px Arial`;
-          ctx.fillStyle = "#fff";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(text, width / 2, height * 0.85);
-        }
-
-        gif.addFrame(ctx, {
-          copy: true,
-          delay: Math.max(f.delay, 120),
-        });
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(x, y, baseSize, baseSize, radius);
+        ctx.clip();
+        ctx.drawImage(uploadedImage, x, y, baseSize, baseSize);
+        ctx.restore();
       }
 
-      gif.on("progress", (p: number) => {
-        setProgress(Math.round(p * 100));
+      if (text) {
+        ctx.font = `${width * 0.04}px Arial`;
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, width / 2, height * 0.85);
+      }
+
+      gif.addFrame(ctx, {
+        copy: true,
+        delay: f.delay || 80, // ⚡ smoother + faster encoding
       });
 
-      gif.on("finished", (blob: Blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
+      // ✅ progress smoother
+      setProgress(Math.round((i / frames.length) * 100));
+    }
 
-        a.href = url;
-        a.download = `eid-${text || "card"}.gif`;
-        a.click();
+    gif.on("progress", (p: number) => {
+      setProgress(Math.round(p * 100));
+    });
 
-        URL.revokeObjectURL(url);
+    gif.on("finished", (blob: Blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
 
-        setIsProcessing(false);
-        setProgress(0);
-        message.success("Downloaded!");
-      });
+      a.href = url;
+      a.download = `eid-${text || "card"}.gif`;
+      a.click();
 
-      gif.render();
-    } catch (err) {
-      console.error(err);
-      message.error("Error!");
+      URL.revokeObjectURL(url);
+
       setIsProcessing(false);
       setProgress(0);
-    }
-  };
+      message.success("Downloaded!");
+    });
+
+    gif.render();
+  } catch (err) {
+    console.error(err);
+    message.error("Error!");
+    setIsProcessing(false);
+    setProgress(0);
+  }
+};
+
+
 
 
   return (
@@ -312,19 +312,19 @@ export default function EidCard() {
               </Button>
             </div>
             {isProcessing && (
-            <div className="mt-3">
-              <div className="text-sm mb-1 !text-gray-700 ">
-                Download: {progress}%
-              </div>
+              <div className="mt-3">
+                <div className="text-sm mb-1 !text-gray-700 ">
+                  Download: {progress}%
+                </div>
 
-              <div className="w-full h-2 bg-gray-200 rounded">
-                <div
-                  className="h-2 bg-green-500 rounded transition-all"
-                  style={{ width: `${progress}%` }}
-                />
+                <div className="w-full h-2 bg-gray-200 rounded">
+                  <div
+                    className="h-2 bg-green-500 rounded transition-all"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
               </div>
-            </div>
-          )}
+            )}
           </Card>
         </div>
       </div>
