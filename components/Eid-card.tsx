@@ -62,7 +62,7 @@ export default function EidCard() {
 
       const gif = new GIF({
         workers: Math.max(2, navigator.hardwareConcurrency || 4),
-        quality: 1,
+        quality: 2,
         width,
         height,
         workerScript: "/gif.worker.js",
